@@ -1,10 +1,10 @@
 {
-  "name": "@berish/emitter",
+  "name": "@berish/orm-rethinkdb-db-adapter",
   "version": "1.0.0",
-  "description": "Удобный механиз работы с событиями. Умеет кешировать запросы и подписки, за счет чего можно экономить ресурсы запросов",
+  "description": "Адаптер базы данных RethinkDB для @berish/orm",
   "main": "build/index.js",
   "typings": "build/index.d.ts",
-  "repository": "git@gitlab.com:berish/packages/berish-emitter.git",
+  "repository": "git@gitlab.com:berish/packages/berish-orm-rethinkdb-db-adapter.git",
   "author": "Berishev Ravil <quadraticteam@gmail.com>",
   "license": "MIT",
   "private": false,
@@ -36,9 +36,14 @@
   "files": [
     "build/**/*"
   ],
+  "peerDependencies": {
+    "@berish/orm": "^0.2.0"
+  },
   "devDependencies": {
+    "@berish/orm": "^0.2.0",
     "@types/faker": "^4.1.5",
     "@types/jest": "^24.0.15",
+    "@types/rethinkdb": "^2.3.16",
     "faker": "^4.1.0",
     "jest": "^24.8.0",
     "prettier": "^1.18.2",
@@ -48,6 +53,8 @@
     "typescript": "^3.5.2"
   },
   "dependencies": {
-    "berish-guid": "^2.0.0"
+    "@berish/emitter": "^1.1.0",
+    "@berish/try-call": "^1.0.0",
+    "rethinkdb": "^2.4.2"
   }
 }
