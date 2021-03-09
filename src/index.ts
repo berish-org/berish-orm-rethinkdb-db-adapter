@@ -16,7 +16,6 @@ export default class RethinkDBAdapter extends BaseDBAdapter<IRethinkDBAdapterPar
   private _cacheEmitter = new CacheEmitter();
 
   private tables: string[] = [];
-  // private tablesInWait: { [tableName: string]: Promise<void> } = {};
   private indexNames: { [tableName: string]: string[] } = {};
   private subscribeCursors: r.Cursor[] = [];
   private _subscribeEventHashes: string[] = [];
@@ -42,7 +41,6 @@ export default class RethinkDBAdapter extends BaseDBAdapter<IRethinkDBAdapterPar
     this.connection = null;
 
     this.tables = [];
-    // this.tablesInWait = {};
     this.indexNames = {};
     this.subscribeCursors = [];
   }
@@ -137,7 +135,7 @@ export default class RethinkDBAdapter extends BaseDBAdapter<IRethinkDBAdapterPar
         const cursor = await seq.changes({ squash: 1 } as any).run(this.connection);
 
         cursor.each((err, data) => {
-          if (err) return onError(err);
+          if (err) return onError && onError(err);
           const { old_val: oldValue, new_val: newValue } = data;
           callback({ oldValue, newValue });
         });
@@ -166,41 +164,6 @@ export default class RethinkDBAdapter extends BaseDBAdapter<IRethinkDBAdapterPar
       this.subscribeCursors = this.subscribeCursors.filter(m => m !== cursor);
     }
   }
-
-  // private async table(tableName: string): Promise<r.Table> {
-  //   const db = r.db(this.params.dbName);
-
-  //   if (this.tables.includes(tableName)) {
-  //     const tableList = await db.tableList().run(this.connection);
-
-  //     if (tableList.includes(tableName)) return db.table(tableName);
-  //     this.tables.splice(this.tables.indexOf(tableName), 1);
-
-  //     return this.table(tableName);
-  //   }
-  //   if (this.tablesInWait[tableName]) {
-  //     await this.tablesInWait[tableName];
-  //     return this.table(tableName);
-  //   }
-  //   let resolvePromise: () => void = null;
-
-  //   this.tablesInWait[tableName] = new Promise<void>(resolve => (resolvePromise = resolve));
-  //   const tableList = await db.tableList().run(this.connection);
-  //   if (!tableList.includes(tableName)) {
-  //     await db.tableCreate(tableName).run(this.connection);
-  //     await db
-  //       .table(tableName)
-  //       .wait()
-  //       .run(this.connection);
-  //   }
-  //   this.indexNames = Object.assign(this.indexNames, { [tableName]: [] });
-  //   this.tables.push(tableName);
-
-  //   resolvePromise();
-  //   delete this.tablesInWait[tableName];
-
-  //   return db.table(tableName);
-  // }
 
   private table(tableName: string): Promise<r.Table> {
     const _table = async (tableName: string) => {
