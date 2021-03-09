@@ -40,7 +40,7 @@
     "@berish/orm": "^0.4.0"
   },
   "devDependencies": {
-    "@berish/orm": "^0.4.0",
+    "@berish/orm": "^0.8.0",
     "@types/faker": "^4.1.5",
     "@types/jest": "^24.0.15",
     "@types/rethinkdb": "^2.3.16",
@@ -54,8 +54,7 @@
   },
   "dependencies": {
     "@berish/emitter": "^1.4.1",
-    "@berish/linq": "1.1.0",
-    "@berish/try-call": "1.0.0",
+    "@berish/linq": "^1.1.0",
     "rethinkdb": "^2.4.2"
   }
 }
