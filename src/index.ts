@@ -202,7 +202,7 @@ export default class RethinkDBAdapter extends BaseDBAdapter<IRethinkDBAdapterPar
   //   return db.table(tableName);
   // }
 
-  public table(tableName: string): Promise<r.Table> {
+  private table(tableName: string): Promise<r.Table> {
     const _table = async (tableName: string) => {
       const db = r.db(this.params.dbName);
 
