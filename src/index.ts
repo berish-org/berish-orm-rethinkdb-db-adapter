@@ -1,8 +1,9 @@
+import { CacheEmitter } from '@berish/emitter';
 import LINQ from '@berish/linq';
-import tryCall from '@berish/try-call';
+
 import * as r from 'rethinkdb';
 
-import { BaseDBAdapter, IBaseDBItem, QueryData, QueryDataSchema } from '@berish/orm';
+import { BaseDBAdapter, IBaseDBItem, Query, QueryData, QueryDataSchema } from '@berish/orm';
 
 export interface IRethinkDBAdapterParams {
   host?: string;
@@ -12,10 +13,13 @@ export interface IRethinkDBAdapterParams {
 
 export default class RethinkDBAdapter extends BaseDBAdapter<IRethinkDBAdapterParams> {
   private connection: r.Connection = null;
+  private _cacheEmitter = new CacheEmitter();
 
   private tables: string[] = [];
-  private tablesInWait: { [tableName: string]: Promise<void> } = {};
+  // private tablesInWait: { [tableName: string]: Promise<void> } = {};
   private indexNames: { [tableName: string]: string[] } = {};
+  private subscribeCursors: r.Cursor[] = [];
+  private _subscribeEventHashes: string[] = [];
 
   public async initialize(params: IRethinkDBAdapterParams) {
     this.params = params;
@@ -24,6 +28,30 @@ export default class RethinkDBAdapter extends BaseDBAdapter<IRethinkDBAdapterPar
     if (!dbList.includes(params.dbName)) {
       await r.dbCreate(params.dbName).run(this.connection);
     }
+  }
+
+  public async close() {
+    for (const hash of this._subscribeEventHashes) {
+      this._cacheEmitter.unsubscribe(hash);
+    }
+
+    if (this.connection && this.connection.open) {
+      await this.connection.close();
+    }
+    this.params = null;
+    this.connection = null;
+
+    this.tables = [];
+    // this.tablesInWait = {};
+    this.indexNames = {};
+    this.subscribeCursors = [];
+  }
+
+  public async reconnect() {
+    const params = this.params;
+
+    await this.close();
+    await this.initialize(params);
   }
 
   public async count(queryData: QueryData<QueryDataSchema>) {
@@ -92,68 +120,122 @@ export default class RethinkDBAdapter extends BaseDBAdapter<IRethinkDBAdapterPar
     await seq.delete().run(this.connection);
   }
 
-  public async subscribe<T>(
+  public subscribe<T>(
     query: QueryData<QueryDataSchema>,
     callback: (oldValue: T, newValue: T) => void,
     onError: (reason: any) => any,
   ) {
-    const { value: className } = LINQ.from(query).last(m => m.key === 'className');
+    const queryHash = Query.getHash(query);
 
-    const table = await this.table(className);
-    const seq = await this.filter(table, query);
-    const cursor = await seq.changes({ squash: 1 } as any).run(this.connection);
-    cursor.each((err, { old_val: oldValue, new_val: newValue }) => {
-      if (err) return onError(err);
-      callback(oldValue, newValue);
-    });
+    const eventHash = this._cacheEmitter.subscribe<{ oldValue: T; newValue: T }>(
+      `subscribe_${queryHash}`,
+      async callback => {
+        const { value: className } = LINQ.from(query).last(m => m.key === 'className');
 
-    return async () => {
-      try {
-        await tryCall(() => cursor.close(), { maxAttempts: 5, timeout: 1000, canThrow: true });
-      } catch (err) {
-        await this.connection.close();
-        await this.initialize(this.params);
-      }
+        const table = await this.table(className);
+        const seq = await this.filter(table, query);
+        const cursor = await seq.changes({ squash: 1 } as any).run(this.connection);
+
+        cursor.each((err, data) => {
+          if (err) return onError(err);
+          const { old_val: oldValue, new_val: newValue } = data;
+          callback({ oldValue, newValue });
+        });
+
+        this.subscribeCursors.push(cursor);
+
+        // return cursor;
+        return () => {
+          this.closeCursor(cursor, () => this.reconnect());
+        };
+      },
+      ({ oldValue, newValue }) => callback(oldValue, newValue),
+    );
+
+    this._subscribeEventHashes.push(eventHash);
+
+    return () => {
+      this._subscribeEventHashes = this._subscribeEventHashes.filter(m => m !== eventHash);
+      this._cacheEmitter.unsubscribe(eventHash);
     };
   }
 
-  private async table(tableName: string): Promise<r.Table> {
-    const db = r.db(this.params.dbName);
+  private closeCursor(cursor: r.Cursor, onError?: (err: any) => any) {
+    if (cursor) {
+      cursor.close(onError);
+      this.subscribeCursors = this.subscribeCursors.filter(m => m !== cursor);
+    }
+  }
 
-    if (this.tables.includes(tableName)) {
+  // private async table(tableName: string): Promise<r.Table> {
+  //   const db = r.db(this.params.dbName);
+
+  //   if (this.tables.includes(tableName)) {
+  //     const tableList = await db.tableList().run(this.connection);
+
+  //     if (tableList.includes(tableName)) return db.table(tableName);
+  //     this.tables.splice(this.tables.indexOf(tableName), 1);
+
+  //     return this.table(tableName);
+  //   }
+  //   if (this.tablesInWait[tableName]) {
+  //     await this.tablesInWait[tableName];
+  //     return this.table(tableName);
+  //   }
+  //   let resolvePromise: () => void = null;
+
+  //   this.tablesInWait[tableName] = new Promise<void>(resolve => (resolvePromise = resolve));
+  //   const tableList = await db.tableList().run(this.connection);
+  //   if (!tableList.includes(tableName)) {
+  //     await db.tableCreate(tableName).run(this.connection);
+  //     await db
+  //       .table(tableName)
+  //       .wait()
+  //       .run(this.connection);
+  //   }
+  //   this.indexNames = Object.assign(this.indexNames, { [tableName]: [] });
+  //   this.tables.push(tableName);
+
+  //   resolvePromise();
+  //   delete this.tablesInWait[tableName];
+
+  //   return db.table(tableName);
+  // }
+
+  public table(tableName: string): Promise<r.Table> {
+    const _table = async (tableName: string) => {
+      const db = r.db(this.params.dbName);
+
+      if (this.tables.includes(tableName)) {
+        const tableList = await db.tableList().run(this.connection);
+
+        if (tableList.includes(tableName)) return db.table(tableName);
+        this.tables.splice(this.tables.indexOf(tableName), 1);
+
+        return _table(tableName);
+      }
+
       const tableList = await db.tableList().run(this.connection);
+      if (!tableList.includes(tableName)) {
+        await db.tableCreate(tableName).run(this.connection);
+        await db
+          .table(tableName)
+          .wait()
+          .run(this.connection);
+      }
+      this.indexNames = Object.assign(this.indexNames, { [tableName]: [] });
+      this.tables.push(tableName);
 
-      if (tableList.includes(tableName)) return db.table(tableName);
-      this.tables.splice(this.tables.indexOf(tableName), 1);
+      return db.table(tableName);
+    };
 
-      return this.table(tableName);
-    }
-    if (this.tablesInWait[tableName]) {
-      await this.tablesInWait[tableName];
-      return this.table(tableName);
-    }
-    let resolvePromise: () => void = null;
-
-    this.tablesInWait[tableName] = new Promise<void>(resolve => (resolvePromise = resolve));
-    const tableList = await db.tableList().run(this.connection);
-    if (!tableList.includes(tableName)) {
-      await db.tableCreate(tableName).run(this.connection);
-      await db
-        .table(tableName)
-        .wait()
-        .run(this.connection);
-    }
-    this.indexNames = Object.assign(this.indexNames, { [tableName]: [] });
-    this.tables.push(tableName);
-
-    resolvePromise();
-    delete this.tablesInWait[tableName];
-
-    return db.table(tableName);
+    return this._cacheEmitter.call(tableName, () => {
+      return _table(tableName);
+    });
   }
 
   private async filter(table: r.Table, queryData: QueryData<QueryDataSchema>) {
-    return queryData.reduce(async (seqPromise, { key, value }) => {
+    return queryData.reduce<Promise<r.Sequence>>(async (seqPromise, { key, value }) => {
       const seq = await seqPromise;
       if (key === 'ids') return this.ids(table, value);
       if (key === 'limit') return this.limit(seq, value);
@@ -168,7 +250,7 @@ export default class RethinkDBAdapter extends BaseDBAdapter<IRethinkDBAdapterPar
       if (key === 'pluck') return this.pluck(seq, value);
 
       return seq;
-    }, Promise.resolve(table));
+    }, Promise.resolve(table as r.Table));
   }
 
   private async subQuery(mainSeq: r.Sequence, subQueries: QueryDataSchema['subQueries']) {

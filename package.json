@@ -53,6 +53,7 @@
     "typescript": "^3.5.2"
   },
   "dependencies": {
+    "@berish/emitter": "^1.4.1",
     "@berish/linq": "1.1.0",
     "@berish/try-call": "1.0.0",
     "rethinkdb": "^2.4.2"
