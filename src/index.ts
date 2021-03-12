@@ -164,12 +164,12 @@ export default class RethinkDBAdapter extends BaseDBAdapter<IRethinkDBAdapterPar
         const seq = await this.filter(table, query);
         const cursor = await seq
           .changes({
-            squash,
             changefeedQueueSize,
             includeInitial,
             includeOffsets: false,
             includeStates: false,
             includeTypes: false,
+            squash,
           })
           .run(this.connection);
 
@@ -180,7 +180,7 @@ export default class RethinkDBAdapter extends BaseDBAdapter<IRethinkDBAdapterPar
           try {
             callback({ oldValue, newValue });
           } catch (err) {
-            //IGNORE
+            // IGNORE
           }
         });
 
