@@ -11,7 +11,16 @@ export interface IRethinkDBAdapterParams {
   dbName?: string;
 }
 
+export interface IRethinkDBAdapterContructorParams {
+  subscribe?: {
+    changefeedQueueSize?: number;
+    squash?: number | boolean;
+    includeInitial?: boolean;
+  };
+}
+
 export default class RethinkDBAdapter extends BaseDBAdapter<IRethinkDBAdapterParams> {
+  private _constructorParams: IRethinkDBAdapterContructorParams = null;
   private connection: r.Connection = null;
   private _cacheEmitter = new CacheEmitter();
 
@@ -19,6 +28,24 @@ export default class RethinkDBAdapter extends BaseDBAdapter<IRethinkDBAdapterPar
   private indexNames: { [tableName: string]: string[] } = {};
   private subscribeCursors: r.Cursor[] = [];
   private _subscribeEventHashes: string[] = [];
+
+  public constructor(params?: IRethinkDBAdapterContructorParams) {
+    super();
+
+    params = params || {};
+    params.subscribe = params.subscribe || {};
+    params.subscribe.changefeedQueueSize =
+      typeof params.subscribe.changefeedQueueSize === 'number' ? params.subscribe.changefeedQueueSize : 100000;
+    params.subscribe.squash =
+      typeof params.subscribe.squash === 'number' || typeof params.subscribe.squash === 'boolean'
+        ? params.subscribe.squash
+        : false;
+
+    params.subscribe.includeInitial =
+      typeof params.subscribe.includeInitial === 'boolean' ? params.subscribe.includeInitial : false;
+
+    this._constructorParams = params;
+  }
 
   public async initialize(params: IRethinkDBAdapterParams) {
     this.params = params;
@@ -123,6 +150,9 @@ export default class RethinkDBAdapter extends BaseDBAdapter<IRethinkDBAdapterPar
     callback: (oldValue: T, newValue: T) => void,
     onError: (reason: any) => any,
   ) {
+    const {
+      subscribe: { squash, changefeedQueueSize, includeInitial },
+    } = this._constructorParams;
     const queryHash = Query.getHash(query);
 
     const eventHash = this._cacheEmitter.subscribe<{ oldValue: T; newValue: T }>(
@@ -132,12 +162,26 @@ export default class RethinkDBAdapter extends BaseDBAdapter<IRethinkDBAdapterPar
 
         const table = await this.table(className);
         const seq = await this.filter(table, query);
-        const cursor = await seq.changes({ squash: 1 } as any).run(this.connection);
+        const cursor = await seq
+          .changes({
+            squash,
+            changefeedQueueSize,
+            includeInitial,
+            includeOffsets: false,
+            includeStates: false,
+            includeTypes: false,
+          })
+          .run(this.connection);
 
         cursor.each((err, data) => {
           if (err) return onError && onError(err);
+
           const { old_val: oldValue, new_val: newValue } = data;
-          callback({ oldValue, newValue });
+          try {
+            callback({ oldValue, newValue });
+          } catch (err) {
+            //IGNORE
+          }
         });
 
         this.subscribeCursors.push(cursor);
