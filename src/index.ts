@@ -142,7 +142,6 @@ export default class RethinkDBAdapter extends BaseDBAdapter<IRethinkDBAdapterPar
 
         this.subscribeCursors.push(cursor);
 
-        // return cursor;
         return () => {
           this.closeCursor(cursor, () => this.reconnect());
         };
@@ -158,9 +157,13 @@ export default class RethinkDBAdapter extends BaseDBAdapter<IRethinkDBAdapterPar
     };
   }
 
-  private closeCursor(cursor: r.Cursor, onError?: (err: any) => any) {
+  private async closeCursor(cursor: r.Cursor, onError?: (err: any) => any) {
     if (cursor) {
-      cursor.close(onError);
+      try {
+        await cursor.close();
+      } catch (err) {
+        if (onError) onError(err);
+      }
       this.subscribeCursors = this.subscribeCursors.filter(m => m !== cursor);
     }
   }
