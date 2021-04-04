@@ -1,6 +1,6 @@
 {
   "name": "@berish/orm-rethinkdb-db-adapter",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "description": "Адаптер базы данных RethinkDB для @berish/orm",
   "main": "build/index.js",
   "typings": "build/index.d.ts",
