@@ -6,11 +6,11 @@ import * as r from 'rethinkdb';
 import { BaseDBAdapter, IBaseDBItem, Query, QueryData, QueryDataSchema } from '@berish/orm';
 
 export interface IRethinkDBAdapterParams {
+  dbName?: string;
   host?: string;
   port?: number;
-  dbName?: string;
-  user?: string;
   password?: string;
+  user?: string;
 }
 
 export interface IRethinkDBAdapterContructorParams {
@@ -55,9 +55,9 @@ export default class RethinkDBAdapter extends BaseDBAdapter<IRethinkDBAdapterPar
     this.connection = await r.connect({
       db: params.dbName,
       host: params.host,
+      password: params.user,
       port: params.port,
       user: params.user,
-      password: params.user,
     });
 
     await this.db(params.dbName);
