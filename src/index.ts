@@ -11,9 +11,7 @@ export interface IRethinkDBAdapterParams {
   port?: number;
   password?: string;
   user?: string;
-}
-
-export interface IRethinkDBAdapterContructorParams {
+  ssl?: r.ConnectionOptions['ssl'];
   subscribe?: {
     changefeedQueueSize?: number;
     squash?: number | boolean;
@@ -22,7 +20,6 @@ export interface IRethinkDBAdapterContructorParams {
 }
 
 export default class RethinkDBAdapter extends BaseDBAdapter<IRethinkDBAdapterParams> {
-  private _constructorParams: IRethinkDBAdapterContructorParams = null;
   private connection: r.Connection = null;
   private _cacheEmitter = new CacheEmitter();
 
@@ -31,10 +28,9 @@ export default class RethinkDBAdapter extends BaseDBAdapter<IRethinkDBAdapterPar
   private subscribeCursors: r.Cursor[] = [];
   private _subscribeEventHashes: string[] = [];
 
-  public constructor(params?: IRethinkDBAdapterContructorParams) {
-    super();
-
+  public async initialize(params: IRethinkDBAdapterParams) {
     params = params || {};
+
     params.subscribe = params.subscribe || {};
     params.subscribe.changefeedQueueSize =
       typeof params.subscribe.changefeedQueueSize === 'number' ? params.subscribe.changefeedQueueSize : 100000;
@@ -46,10 +42,6 @@ export default class RethinkDBAdapter extends BaseDBAdapter<IRethinkDBAdapterPar
     params.subscribe.includeInitial =
       typeof params.subscribe.includeInitial === 'boolean' ? params.subscribe.includeInitial : false;
 
-    this._constructorParams = params;
-  }
-
-  public async initialize(params: IRethinkDBAdapterParams) {
     this.params = params;
 
     this.connection = await r.connect({
@@ -58,6 +50,7 @@ export default class RethinkDBAdapter extends BaseDBAdapter<IRethinkDBAdapterPar
       password: params.password,
       port: params.port,
       user: params.user,
+      ssl: params.ssl,
     });
 
     await this.db(params.dbName);
@@ -159,7 +152,7 @@ export default class RethinkDBAdapter extends BaseDBAdapter<IRethinkDBAdapterPar
   ) {
     const {
       subscribe: { squash, changefeedQueueSize, includeInitial },
-    } = this._constructorParams;
+    } = this.params;
     const queryHash = Query.getHash(query);
 
     const eventHash = this._cacheEmitter.subscribe<{ oldValue: T; newValue: T }>(
