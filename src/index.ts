@@ -49,8 +49,8 @@ export default class RethinkDBAdapter extends BaseDBAdapter<IRethinkDBAdapterPar
       host: params.host,
       password: params.password,
       port: params.port,
-      user: params.user,
       ssl: params.ssl,
+      user: params.user,
     });
 
     await this.db(params.dbName);
